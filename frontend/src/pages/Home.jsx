@@ -3,6 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { Search, MessageSquare, ArrowUp, User, CheckCircle2, CircleDashed, Filter, RefreshCw, Send, Smile, ThumbsUp, Plus, Camera, Image as ImageIcon, Video, PhoneCall, GraduationCap, FileText, ExternalLink } from 'lucide-react';
 import axios from 'axios';
 
+// กำหนด URL ของ Backend (ใช้ค่าจาก Environment Variable บน Vercel หรือลิงก์ Render โดยตรง)
+const API_URL = import.meta.env.VITE_API_URL || 'https://mis-project-1.onrender.com';
+
 // SVGs for Chatbot
 const AcademicLogo = () => (
   <div className="w-10 h-10 rounded-full flex items-center justify-center shadow-md select-none shrink-0" style={{ background: 'linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%)' }}>
@@ -104,7 +107,7 @@ export default function Home({ currentUser, setCurrentUser }) {
   const fetchForumQuestions = useCallback(async () => {
     setForumLoading(true);
     try {
-      let url = 'http://localhost:5000/api/questions';
+      let url = `${API_URL}/api/questions`;
       const params = {};
 
       if (searchQuery) {
@@ -142,7 +145,7 @@ export default function Home({ currentUser, setCurrentUser }) {
   const handleSeedData = async () => {
     setForumLoading(true);
     try {
-      await axios.get('http://localhost:5000/api/seed');
+      await axios.get(`${API_URL}/api/seed`);
       if (viewMode === 'forum') {
         fetchForumQuestions();
       } else {
@@ -159,7 +162,7 @@ export default function Home({ currentUser, setCurrentUser }) {
   const handleUpvote = async (e, id) => {
     e.stopPropagation();
     try {
-      await axios.post(`http://localhost:5000/api/questions/${id}/upvote`, {
+      await axios.post(`${API_URL}/api/questions/${id}/upvote`, {
         userId: currentUser.name
       });
       fetchForumQuestions();
@@ -288,7 +291,7 @@ export default function Home({ currentUser, setCurrentUser }) {
           else if (cleanText.includes('nestjs')) queryKeyword = 'nestjs';
           else if (cleanText.includes('error')) queryKeyword = 'error';
 
-          const response = await axios.get(`http://localhost:5000/api/questions?q=${queryKeyword}`);
+          const response = await axios.get(`${API_URL}/api/questions?q=${queryKeyword}`);
           const threads = response.data;
 
           if (threads.length > 0) {

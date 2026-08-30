@@ -3,6 +3,9 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, MessageSquare, ArrowUp, ArrowDown, Star, CheckCircle, User, Sparkles, CircleDashed } from 'lucide-react';
 import axios from 'axios';
 
+// กำหนด URL ของ Backend (ใช้ค่าจาก Environment Variable บน Vercel หรือลิงก์ Render โดยตรง)
+const API_URL = import.meta.env.VITE_API_URL || 'https://mis-project-1.onrender.com';
+
 export default function QuestionDetail({ currentUser }) {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -15,7 +18,7 @@ export default function QuestionDetail({ currentUser }) {
   // Fetch thread details
   const fetchThread = useCallback(async () => {
     try {
-      const response = await axios.get(`http://localhost:5000/api/questions/${id}`);
+      const response = await axios.get(`${API_URL}/api/questions/${id}`);
       setQuestion(response.data.question);
       setComments(response.data.comments);
     } catch (err) {
@@ -33,7 +36,7 @@ export default function QuestionDetail({ currentUser }) {
   // Vote Question
   const handleVoteQuestion = async () => {
     try {
-      const response = await axios.post(`https://mis-project-enax.onrender.com/api/questions/${id}/upvote`, {
+      const response = await axios.post(`${API_URL}/api/questions/${id}/upvote`, {
         userId: currentUser.name
       });
       setQuestion(response.data);
@@ -45,7 +48,7 @@ export default function QuestionDetail({ currentUser }) {
   // Vote Comment
   const handleVoteComment = async (commentId) => {
     try {
-      await axios.post(`https://mis-project-enax.onrender.com/api/comments/${commentId}/upvote`, {
+      await axios.post(`${API_URL}/api/comments/${commentId}/upvote`, {
         userId: currentUser.name
       });
       fetchThread();
@@ -57,7 +60,7 @@ export default function QuestionDetail({ currentUser }) {
   // Verify Comment
   const handleVerifyComment = async (commentId) => {
     try {
-      await axios.post(`http://localhost:5000/api/comments/${commentId}/verify`, {
+      await axios.post(`${API_URL}/api/comments/${commentId}/verify`, {
         userId: currentUser.name,
         role: currentUser.role
       });
@@ -73,7 +76,7 @@ export default function QuestionDetail({ currentUser }) {
     if (!newCommentBody.trim()) return;
 
     try {
-      await axios.post(`http://localhost:5000/api/questions/${id}/comments`, {
+      await axios.post(`${API_URL}/api/questions/${id}/comments`, {
         body: newCommentBody,
         author: currentUser
       });
@@ -401,7 +404,7 @@ export default function QuestionDetail({ currentUser }) {
                 disabled={!newCommentBody.trim()}
                 className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium rounded-xl transition text-sm flex items-center gap-1 shadow-sm"
               >
-                <Sparkles size={16} /> ส่งคำตอบ
+                <Sparkles size="{16}"/> ส่งคำตอบ
               </button>
             </div>
           </form>

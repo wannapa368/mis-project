@@ -3,6 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { Bold, Italic, Link, Image, Code, ArrowLeft, Loader2, X, Plus } from 'lucide-react';
 import axios from 'axios';
 
+// กำหนด URL ของ Backend (ใช้ค่าจาก Environment Variable บน Vercel หรือลิงก์ Render โดยตรง)
+const API_URL = import.meta.env.VITE_API_URL || 'https://mis-project-1.onrender.com';
+
 export default function CreateQuestion({ currentUser }) {
   const navigate = useNavigate();
   const [title, setTitle] = useState('');
@@ -23,7 +26,7 @@ export default function CreateQuestion({ currentUser }) {
     const delayDebounceFn = setTimeout(async () => {
       setIsSuggesting(true);
       try {
-        const response = await axios.post('http://localhost:5000/api/ai-suggest-tags', { title, body });
+        const response = await axios.post(`${API_URL}/api/ai-suggest-tags`, { title, body });
         // Filter out tags that are already selected
         const newSuggestions = response.data.tags.filter(t => !tags.includes(t));
         setSuggestedTags(newSuggestions);
@@ -102,7 +105,7 @@ export default function CreateQuestion({ currentUser }) {
     }
 
     try {
-      await axios.post('http://localhost:5000/api/questions', {
+      await axios.post(`${API_URL}/api/questions`, {
         title,
         body,
         tags,
