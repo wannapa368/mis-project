@@ -6,8 +6,10 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Connect to MongoDB
-mongoose.connect('mongodb://127.0.0.1:27017/cs_helpdesk')
+// Connect to MongoDB (รองรับทั้ง MongoDB บนคลาวด์และในเครื่อง)
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/cs_helpdesk';
+
+mongoose.connect(MONGODB_URI)
   .then(() => console.log('Connected to MongoDB cs_helpdesk'))
   .catch(err => console.error('MongoDB connection error:', err));
 
@@ -228,14 +230,12 @@ app.post('/api/comments/:commentId/verify', async (req, res) => {
       comment.isVerified = false;
       await comment.save();
 
-      // Check if there are other verified comments
       const otherVerified = await Comment.findOne({ questionId: question._id, isVerified: true });
       if (!otherVerified) {
         question.status = 'waiting';
         await question.save();
       }
     } else {
-      // Clear other verified comments
       await Comment.updateMany({ questionId: question._id }, { isVerified: false });
       comment.isVerified = true;
       await comment.save();
@@ -306,7 +306,7 @@ app.get('/api/seed', async (req, res) => {
 
     const c2_1 = new Comment({
       questionId: q2._id,
-      body: 'useEffect ใน React ใช้สำหรับจัดการ Side Effects ครับ โดยการทำงานขึ้นกับ Dependency Array (อาร์กิวเมนต์ตัวที่สอง):\n\n1. **ไม่ใส่ Dependency Array** (`useEffect(() => {})`):\n   ฟังก์ชันจะรันใหม่ทุกๆ ครั้งที่มีการเรนเดอร์ (Render) ใหม่ของ Component (ไม่แนะนำสำหรับดึงข้อมูลหรือ event listener เพราะเปลืองทรัพยากรมาก)\n\n2. **ใส่เป็น Array ว่าง** (`useEffect(() => {}, [])`):\n   ฟังก์ชันจะรัน**เฉพาะตอนที่ Component โหลดครั้งแรกเท่านั้น (Mount)** และไม่รันซ้ำอีก เหมาะสำหรับการ Fetch API หรือโหลดข้อมูลตั้งต้น\n\n3. **ใส่ตัวแปรใน Array** (`useEffect(() => {}, [count])`):\n   ฟังก์ชันจะรันตอนโหลดครั้งแรก และ**ทุกครั้งที่ค่าของตัวแปรใน Array เปลี่ยนแปลง**ครับ',
+      body: 'useEffect ใน React ใช้สำหรับจัดการ Side Effects ครับ โดยการทำงานขึ้นกับ Dependency Array (อาร์กิวเมนต์ตัวที่สอง):\n\n1. **ไม่ใส่ Dependency Array** (`useEffect(() => {})`):\n  ฟังก์ชันจะรันใหม่ทุกๆ ครั้งที่มีการเรนเดอร์ (Render) ใหม่ของ Component (ไม่แนะนำสำหรับดึงข้อมูลหรือ event listener เพราะเปลืองทรัพยากรมาก)\n\n2. **ใส่เป็น Array ว่าง** (`useEffect(() => {}, [])`):\n  ฟังก์ชันจะรัน**เฉพาะตอนที่ Component โหลดครั้งแรกเท่านั้น (Mount)** และไม่รันซ้ำอีก เหมาะสำหรับการ Fetch API หรือโหลดข้อมูลตั้งต้น\n\n3. **ใส่ตัวแปรใน Array** (`useEffect(() => {}, [count])`):\n  ฟังก์ชันจะรันตอนโหลดครั้งแรก และ**ทุกครั้งที่ค่าของตัวแปรใน Array เปลี่ยนแปลง**ครับ',
       upvotes: 8,
       upvoteUserIds: [],
       isVerified: true,
@@ -369,6 +369,8 @@ app.get('/api/seed', async (req, res) => {
   }
 });
 
-app.listen(5000, () => {
-  console.log('Backend server running on http://localhost:5000');
+// รองรับพอร์ตจาก Render (Production) หรือพอร์ต 5000 (Local)
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`Backend server running on port ${PORT}`);
 });
