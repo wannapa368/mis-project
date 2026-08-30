@@ -33,7 +33,7 @@ export default function QuestionDetail({ currentUser }) {
   // Vote Question
   const handleVoteQuestion = async () => {
     try {
-      const response = await axios.post(`http://localhost:5000/api/questions/${id}/upvote`, {
+      const response = await axios.post(`https://mis-project-enax.onrender.com/api/questions/${id}/upvote`, {
         userId: currentUser.name
       });
       setQuestion(response.data);
@@ -45,7 +45,7 @@ export default function QuestionDetail({ currentUser }) {
   // Vote Comment
   const handleVoteComment = async (commentId) => {
     try {
-      await axios.post(`http://localhost:5000/api/comments/${commentId}/upvote`, {
+      await axios.post(`https://mis-project-enax.onrender.com/api/comments/${commentId}/upvote`, {
         userId: currentUser.name
       });
       fetchThread();
