@@ -1,0 +1,101 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+Thai:wght@300;400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Inter', 'Noto Sans Thai', system-ui, -apple-system, sans-serif;
+
+  /* Brand palette — เปลี่ยนสีหลักของทั้งเว็บได้ที่นี่ที่เดียว */
+  --color-brand-50: #eef4ff;
+  --color-brand-100: #dbe6fe;
+  --color-brand-200: #bfd3fe;
+  --color-brand-300: #93b4fd;
+  --color-brand-400: #6090fa;
+  --color-brand-500: #3b6cf6;
+  --color-brand-600: #2550eb;
+  --color-brand-700: #1d3fd8;
+  --color-brand-800: #1e35af;
+  --color-brand-900: #1e338a;
+  --color-accent-500: #8b5cf6;
+  --color-accent-600: #7c3aed;
+
+  --shadow-soft: 0 1px 2px rgb(15 23 42 / 0.04), 0 4px 16px -4px rgb(15 23 42 / 0.08);
+  --shadow-lift: 0 2px 4px rgb(15 23 42 / 0.04), 0 16px 32px -12px rgb(37 80 235 / 0.25);
+
+  --animate-bounce-slow: bounce-slow 3s ease-in-out infinite;
+  --animate-slide-in: slide-in 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-fade-up: fade-up 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-typing: typing 1.2s ease-in-out infinite;
+
+  @keyframes bounce-slow {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-6px); }
+  }
+  @keyframes slide-in {
+    from { opacity: 0; transform: translateY(16px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes typing {
+    0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+    30% { transform: translateY(-4px); opacity: 1; }
+  }
+}
+
+@layer base {
+  body {
+    @apply bg-slate-50 text-slate-800 antialiased;
+    background-image:
+      radial-gradient(60rem 30rem at 0% -10%, rgb(59 108 246 / 0.10), transparent 60%),
+      radial-gradient(50rem 30rem at 100% 0%, rgb(139 92 246 / 0.08), transparent 60%);
+    background-attachment: fixed;
+  }
+
+  ::selection {
+    @apply bg-brand-200 text-brand-900;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(148 163 184 / 0.5) transparent;
+  }
+}
+
+@utility scrollbar-hide {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* แผงกระจกฝ้า ใช้กับ header / sidebar */
+@utility glass {
+  background-color: rgb(255 255 255 / 0.72);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+}
+
+@utility card {
+  @apply bg-white rounded-2xl border border-slate-200/80 shadow-soft;
+}
+
+@utility btn-primary {
+  @apply inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white
+    bg-gradient-to-r from-brand-600 to-accent-600 shadow-md shadow-brand-600/25
+    hover:shadow-lg hover:shadow-brand-600/30 hover:brightness-110 active:scale-[0.98]
+    transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:brightness-100;
+}
+
+@utility btn-ghost {
+  @apply inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-slate-600
+    bg-white border border-slate-200 hover:bg-slate-50 hover:border-slate-300 active:scale-[0.98]
+    transition-all duration-200 cursor-pointer;
+}
+
+@utility input-field {
+  @apply w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-800
+    placeholder:text-slate-400 transition
+    focus:outline-none focus:border-brand-400 focus:ring-4 focus:ring-brand-500/10;
+}
