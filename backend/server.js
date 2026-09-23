@@ -26,11 +26,14 @@ const QuestionSchema = new mongoose.Schema({
     role: { type: String, default: 'Student' }, // 'Student' or 'Teacher'
     avatar: { type: String, default: 'Student' }
   },
-  createdAt: { type: Date, default: Date.now }
+  createdAt: { type: Date, default: Date.now },
+  editedAt: { type: Date, default: null }
 });
 
 const CommentSchema = new mongoose.Schema({
   questionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Question', required: true },
+  // ถ้ามีค่า = เป็นการตอบกลับคำตอบนั้น (ตอบกลับได้เฉพาะเจ้าของกระทู้)
+  parentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Comment', default: null },
   body: { type: String, required: true },
   upvotes: { type: Number, default: 0 },
   upvoteUserIds: [String],
@@ -40,8 +43,15 @@ const CommentSchema = new mongoose.Schema({
     role: { type: String, default: 'Student' },
     avatar: { type: String, default: 'Student' }
   },
-  createdAt: { type: Date, default: Date.now }
+  createdAt: { type: Date, default: Date.now },
+  editedAt: { type: Date, default: null }
 });
+
+// Index สำหรับคำสั่งที่ใช้บ่อย: เรียงกระทู้ล่าสุด, กรองตามแท็ก/ผู้เขียน, หาคอมเมนต์ของกระทู้
+QuestionSchema.index({ createdAt: -1 });
+QuestionSchema.index({ tags: 1, createdAt: -1 });
+QuestionSchema.index({ 'author.name': 1, createdAt: -1 });
+CommentSchema.index({ questionId: 1 });
 
 const Question = mongoose.model('Question', QuestionSchema);
 const Comment = mongoose.model('Comment', CommentSchema);
@@ -55,6 +65,7 @@ function extractAITags(title, body) {
   if (text.includes('error') || text.includes('exception') || text.includes('bug') || text.includes('fail') || text.includes('refused') || text.includes('crash')) tags.push('Error');
   if (text.includes('nest') || text.includes('nestjs') || text.includes('typeorm')) tags.push('NestJS');
   if (text.includes('react') || text.includes('useeffect') || text.includes('usestate') || text.includes('hooks') || text.includes('nextjs')) tags.push('React');
+  if (text.includes('หลักสูตร') || text.includes('curriculum') || text.includes('หน่วยกิต') || text.includes('cwie') || text.includes('2570') || text.includes('รหัส 70') || text.includes('รหัส70')) tags.push('Curriculum');
   
   const uniqueTags = [...new Set(tags)];
   return uniqueTags.length > 0 ? uniqueTags : ['General'];
@@ -79,10 +90,12 @@ app.get('/api/questions', async (req, res) => {
     let filter = {};
 
     if (q) {
+      // escape อักขระพิเศษ เช่น "C++" หรือ "(" เพื่อไม่ให้ regex พัง
+      const safeQ = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       filter.$or = [
-        { title: { $regex: q, $options: 'i' } },
-        { body: { $regex: q, $options: 'i' } },
-        { tags: { $regex: q, $options: 'i' } }
+        { title: { $regex: safeQ, $options: 'i' } },
+        { body: { $regex: safeQ, $options: 'i' } },
+        { tags: { $regex: safeQ, $options: 'i' } }
       ];
     }
 
@@ -98,17 +111,26 @@ app.get('/api/questions', async (req, res) => {
       filter['author.name'] = myThreads;
     }
 
-    const questions = await Question.find(filter).sort({ createdAt: -1 });
+    // ดึงกระทู้พร้อมจำนวนคอมเมนต์ในคำสั่งเดียว (แทนการ count ทีละกระทู้)
+    // และไม่ส่ง body ไปด้วย เพราะหน้ารวมกระทู้ไม่ได้ใช้ ทำให้ response เล็กลง
+    const questions = await Question.aggregate([
+      { $match: filter },
+      { $sort: { createdAt: -1 } },
+      { $project: { body: 0 } },
+      {
+        $lookup: {
+          from: Comment.collection.name,
+          localField: '_id',
+          foreignField: 'questionId',
+          pipeline: [{ $project: { _id: 1 } }],
+          as: 'comments'
+        }
+      },
+      { $addFields: { commentsCount: { $size: '$comments' } } },
+      { $project: { comments: 0 } }
+    ]);
 
-    const questionsWithCount = await Promise.all(questions.map(async (question) => {
-      const commentsCount = await Comment.countDocuments({ questionId: question._id });
-      return {
-        ...question.toObject(),
-        commentsCount
-      };
-    }));
-
-    res.json(questionsWithCount);
+    res.json(questions);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -177,12 +199,23 @@ app.post('/api/questions/:id/upvote', async (req, res) => {
 // Add comment
 app.post('/api/questions/:id/comments', async (req, res) => {
   try {
-    const { body, author } = req.body;
+    const { body, author, parentId } = req.body;
     const question = await Question.findById(req.params.id);
     if (!question) return res.status(404).json({ error: 'Question not found' });
 
+    if (parentId) {
+      if (!author || author.name !== question.author.name) {
+        return res.status(403).json({ error: 'เฉพาะเจ้าของกระทู้เท่านั้นที่ตอบกลับคำตอบได้' });
+      }
+      const parent = await Comment.findById(parentId);
+      if (!parent || !parent.questionId.equals(question._id) || parent.parentId) {
+        return res.status(400).json({ error: 'ไม่พบคำตอบที่ต้องการตอบกลับ' });
+      }
+    }
+
     const newComment = new Comment({
       questionId: question._id,
+      parentId: parentId || null,
       body,
       author: author || { name: 'นักศึกษาปริศนา', role: 'Student', avatar: 'Student' }
     });
@@ -220,6 +253,7 @@ app.post('/api/comments/:commentId/verify', async (req, res) => {
   try {
     const comment = await Comment.findById(req.params.commentId);
     if (!comment) return res.status(404).json({ error: 'Comment not found' });
+    if (comment.parentId) return res.status(400).json({ error: 'ไม่สามารถยืนยันข้อความตอบกลับเป็นคำตอบได้' });
 
     const question = await Question.findById(comment.questionId);
     if (!question) return res.status(404).json({ error: 'Question not found' });
@@ -251,6 +285,94 @@ app.post('/api/comments/:commentId/verify', async (req, res) => {
 });
 
 // Seed route
+// ---- แก้ไข / ลบ (ทำได้เฉพาะเจ้าของเนื้อหา) ----
+// หมายเหตุ: ระบบยังไม่มีการล็อกอินจริง จึงเช็กจากชื่อผู้ใช้ที่ส่งมา (userName)
+
+// แก้ไขกระทู้
+app.put('/api/questions/:id', async (req, res) => {
+  try {
+    const { title, body, tags, userName } = req.body;
+    const question = await Question.findById(req.params.id);
+    if (!question) return res.status(404).json({ error: 'Question not found' });
+    if (!userName || userName !== question.author.name) {
+      return res.status(403).json({ error: 'เฉพาะเจ้าของกระทู้เท่านั้นที่แก้ไขกระทู้ได้' });
+    }
+    if (!title?.trim() || !body?.trim()) {
+      return res.status(400).json({ error: 'กรุณากรอกหัวข้อและรายละเอียดคำถาม' });
+    }
+
+    question.title = title.trim();
+    question.body = body;
+    if (Array.isArray(tags)) question.tags = tags;
+    question.editedAt = new Date();
+    await question.save();
+    res.json(question);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ลบกระทู้ (ลบคำตอบและข้อความตอบกลับทั้งหมดของกระทู้ด้วย)
+app.delete('/api/questions/:id', async (req, res) => {
+  try {
+    const { userName } = req.body || {};
+    const question = await Question.findById(req.params.id);
+    if (!question) return res.status(404).json({ error: 'Question not found' });
+    if (!userName || userName !== question.author.name) {
+      return res.status(403).json({ error: 'เฉพาะเจ้าของกระทู้เท่านั้นที่ลบกระทู้ได้' });
+    }
+
+    await Comment.deleteMany({ questionId: question._id });
+    await question.deleteOne();
+    res.json({ deleted: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// แก้ไขคำตอบ / ข้อความตอบกลับ
+app.put('/api/comments/:commentId', async (req, res) => {
+  try {
+    const { body, userName } = req.body;
+    const comment = await Comment.findById(req.params.commentId);
+    if (!comment) return res.status(404).json({ error: 'Comment not found' });
+    if (!userName || userName !== comment.author.name) {
+      return res.status(403).json({ error: 'เฉพาะผู้เขียนเท่านั้นที่แก้ไขข้อความนี้ได้' });
+    }
+    if (!body?.trim()) return res.status(400).json({ error: 'กรุณากรอกข้อความ' });
+
+    comment.body = body;
+    comment.editedAt = new Date();
+    await comment.save();
+    res.json(comment);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ลบคำตอบ / ข้อความตอบกลับ (ลบคำตอบ = ลบข้อความตอบกลับใต้คำตอบนั้นด้วย)
+app.delete('/api/comments/:commentId', async (req, res) => {
+  try {
+    const { userName } = req.body || {};
+    const comment = await Comment.findById(req.params.commentId);
+    if (!comment) return res.status(404).json({ error: 'Comment not found' });
+    if (!userName || userName !== comment.author.name) {
+      return res.status(403).json({ error: 'เฉพาะผู้เขียนเท่านั้นที่ลบข้อความนี้ได้' });
+    }
+
+    await Comment.deleteMany({ parentId: comment._id });
+    await comment.deleteOne();
+
+    // ถ้าลบคำตอบที่ถูกยืนยันไว้ ให้กระทู้กลับไปเป็น "รอคำตอบ"
+    if (comment.isVerified) {
+      await Question.updateOne({ _id: comment.questionId }, { status: 'waiting' });
+    }
+    res.json({ deleted: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/seed', async (req, res) => {
   try {
     await Question.deleteMany({});
@@ -363,7 +485,31 @@ app.get('/api/seed', async (req, res) => {
     });
     await q4.save();
 
-    res.json({ message: 'Seeding completed successfully!', questionsCount: 4, commentsCount: 5 });
+    // Q5
+    const q5 = new Question({
+      title: 'สอบถามรายละเอียดโครงสร้างหลักสูตร วท.บ. วิทยาการคอมพิวเตอร์ (ปรับปรุง 2570 / รหัส 70) ครับ',
+      body: 'อยากทราบว่าหลักสูตรใหม่รหัส 70 มีโครงสร้างหน่วยกิตอย่างไรบ้าง และมีสายวิชาเลือก (Tracks) ให้เลือกเรียนอะไรบ้างครับ มีเปิดสอนวิชาทางด้าน AI หรือ Cloud บ้างไหมครับ?',
+      tags: ['Curriculum', 'General'],
+      status: 'resolved',
+      upvotes: 28,
+      upvoteUserIds: [],
+      author: { name: 'Somchai R.', role: 'Student', avatar: 'Student' },
+      createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000)
+    });
+    await q5.save();
+
+    const c5_1 = new Comment({
+      questionId: q5._id,
+      body: 'หลักสูตรวิทยาศาสตรบัณฑิต สาขาวิชาวิทยาการคอมพิวเตอร์ (หลักสูตรปรับปรุง พ.ศ. 2570 / รหัส 70) รวมตลอดหลักสูตรไม่น้อยกว่า 120–124 หน่วยกิตครับ โดยแบ่งเป็น:\n\n1. หมวดวิชาศึกษาทั่วไป (24–30 หน่วยกิต)\n2. หมวดวิชาเฉพาะ (84–90 หน่วยกิต) ประกอบด้วย วิชาแกน (12–15 นก.), วิชาเอกบังคับ (42–45 นก.), วิชาเอกเลือกตามแทร็ก (18–24 นก.) และสหกิจศึกษา CWIE (6–7 นก.)\n3. หมวดวิชาเลือกเสรี (ไม่น้อยกว่า 6 หน่วยกิต)\n\nนอกจากนี้ยังมี 4 Tracks สายอาชีพให้นักศึกษาเลือกตามความสนใจ ได้แก่:\n• Track 1: AI & Applied Data Intelligence\n• Track 2: Full-Stack Software & Cloud Architecture\n• Track 3: Cybersecurity & Defensive Operations\n• Track 4: Smart Technology & Agro-Informatics (อัตลักษณ์แม่โจ้)',
+      upvotes: 12,
+      upvoteUserIds: [],
+      isVerified: true,
+      author: { name: 'อาจารย์สมศักดิ์', role: 'Teacher', avatar: 'Teacher' },
+      createdAt: new Date(Date.now() - 2.5 * 24 * 60 * 60 * 1000)
+    });
+    await c5_1.save();
+
+    res.json({ message: 'Seeding completed successfully!', questionsCount: 5, commentsCount: 6 });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

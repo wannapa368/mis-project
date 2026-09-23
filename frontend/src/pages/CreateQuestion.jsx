@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bold, Italic, Link, Image, Code, ArrowLeft, Loader2, X, Plus } from 'lucide-react';
+import { Bold, Italic, Link, Image, Code, ArrowLeft, Loader2, X, Plus, Sparkles, Send } from 'lucide-react';
 import axios from 'axios';
 
 // กำหนด URL ของ Backend (ใช้ค่าจาก Environment Variable บน Vercel หรือลิงก์ Render โดยตรง)
@@ -118,36 +118,51 @@ export default function CreateQuestion({ currentUser }) {
     }
   };
 
+  const toolbarButtons = [
+    { type: 'bold', icon: Bold, title: 'ตัวหนา' },
+    { type: 'italic', icon: Italic, title: 'ตัวเอียง' },
+    { type: 'link', icon: Link, title: 'แทรกลิงก์' },
+    { type: 'image', icon: Image, title: 'แนบรูปภาพ' },
+  ];
+
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="min-h-screen flex flex-col">
       {/* Navigation Header */}
-      <header className="bg-white border-b sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto px-4 h-16 flex items-center gap-4">
-          <button 
+      <header className="glass sticky top-0 z-30 border-b border-slate-200/70">
+        <div className="max-w-3xl mx-auto px-4 h-16 flex items-center gap-3">
+          <button
+            type="button"
             onClick={() => navigate('/')}
-            className="p-2 hover:bg-gray-100 rounded-full transition"
+            className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+            title="กลับสู่หน้าแรก"
           >
-            <ArrowLeft className="text-gray-600" />
+            <ArrowLeft size={20} />
           </button>
-          <div className="text-lg font-bold text-gray-900">กลับสู่หน้าแรก</div>
+          <div className="leading-tight">
+            <div className="text-[15px] font-bold text-slate-900">กลับสู่หน้าแรก</div>
+            <div className="text-[11px] text-slate-500">CS Helpdesk · มหาวิทยาลัยแม่โจ้</div>
+          </div>
         </div>
       </header>
 
       {/* Main Form container */}
       <main className="flex-1 max-w-3xl mx-auto w-full px-4 py-8">
-        <div className="bg-white p-8 rounded-2xl border shadow-sm">
-          <h1 className="text-2xl font-bold text-gray-900 mb-6">ตั้งคำถามใหม่</h1>
-          
+        <div className="mb-6 animate-fade-up">
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">ตั้งคำถามใหม่</h1>
+          <p className="text-sm text-slate-500 mt-1.5">อธิบายปัญหาให้ชัดเจน แนบโค้ดที่เกี่ยวข้อง แล้วให้ AI ช่วยแนะนำแท็กที่เหมาะสม</p>
+        </div>
+
+        <div className="card p-6 sm:p-8 animate-fade-up">
           {error && (
-            <div className="mb-6 p-4 bg-red-50 text-red-700 rounded-lg text-sm border border-red-200">
-              {error}
+            <div className="mb-6 px-4 py-3 bg-red-50 text-red-700 rounded-xl text-sm border border-red-200 flex items-center gap-2">
+              <X size={16} className="shrink-0" /> {error}
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-7">
             {/* Title */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
+              <label className="block text-sm font-semibold text-slate-800 mb-2">
                 หัวข้อคำถามของคุณคืออะไร?
               </label>
               <input
@@ -155,89 +170,72 @@ export default function CreateQuestion({ currentUser }) {
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="เช่น รัน MongoDB ไม่ขึ้นครับ Error connection refused"
-                className="w-full px-4 py-3 border rounded-xl focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-lg font-medium"
+                className="input-field text-base font-medium py-3"
               />
             </div>
 
             {/* Toolbar & Body */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
+              <label className="block text-sm font-semibold text-slate-800 mb-2">
                 รายละเอียดปัญหาหรือโค้ด
               </label>
-              
-              {/* Toolbar */}
-              <div className="flex items-center gap-1 p-2 bg-gray-50 border border-b-0 rounded-t-xl text-gray-600">
-                <button
-                  type="button"
-                  onClick={() => handleToolbarClick('bold')}
-                  className="p-2 hover:bg-gray-200 rounded transition"
-                  title="ตัวหนา"
-                >
-                  <Bold size={18} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleToolbarClick('italic')}
-                  className="p-2 hover:bg-gray-200 rounded transition"
-                  title="ตัวเอียง"
-                >
-                  <Italic size={18} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleToolbarClick('link')}
-                  className="p-2 hover:bg-gray-200 rounded transition"
-                  title="แทรกลิงก์"
-                >
-                  <Link size={18} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleToolbarClick('image')}
-                  className="p-2 hover:bg-gray-200 rounded transition"
-                  title="แนบรูปภาพ"
-                >
-                  <Image size={18} />
-                </button>
-                <div className="w-[1px] h-6 bg-gray-300 mx-1"></div>
-                <button
-                  type="button"
-                  onClick={() => handleToolbarClick('code')}
-                  className="p-2 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded transition flex items-center gap-1 font-semibold text-xs"
-                  title="แทรก Code Block"
-                >
-                  <Code size={18} /> แทรก Code Block
-                </button>
-              </div>
 
-              {/* Textarea */}
-              <textarea
-                id="body-textarea"
-                value={body}
-                onChange={(e) => setBody(e.target.value)}
-                placeholder="อธิบายปัญหาที่คุณพบอย่างละเอียด และวางโค้ดที่เกี่ยวข้องเพื่อความรวดเร็วในการช่วยเหลือ..."
-                rows={12}
-                className="w-full p-4 border rounded-b-xl focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 font-mono text-sm leading-relaxed"
-              />
+              <div className="rounded-xl border border-slate-200 overflow-hidden transition focus-within:border-brand-400 focus-within:ring-4 focus-within:ring-brand-500/10">
+                {/* Toolbar */}
+                <div className="flex items-center gap-0.5 px-2 py-1.5 bg-slate-50 border-b border-slate-200 text-slate-500">
+                  {toolbarButtons.map(({ type, icon: Icon, title: buttonTitle }) => (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => handleToolbarClick(type)}
+                      className="p-2 hover:bg-white hover:text-slate-800 hover:shadow-sm rounded-lg transition cursor-pointer"
+                      title={buttonTitle}
+                    >
+                      <Icon size={17} />
+                    </button>
+                  ))}
+                  <div className="w-px h-5 bg-slate-200 mx-1.5"></div>
+                  <button
+                    type="button"
+                    onClick={() => handleToolbarClick('code')}
+                    className="px-2.5 py-1.5 bg-brand-50 hover:bg-brand-100 text-brand-700 rounded-lg transition flex items-center gap-1.5 font-semibold text-xs cursor-pointer"
+                    title="แทรก Code Block"
+                  >
+                    <Code size={15} /> แทรก Code Block
+                  </button>
+                </div>
+
+                {/* Textarea */}
+                <textarea
+                  id="body-textarea"
+                  value={body}
+                  onChange={(e) => setBody(e.target.value)}
+                  placeholder="อธิบายปัญหาที่คุณพบอย่างละเอียด และวางโค้ดที่เกี่ยวข้องเพื่อความรวดเร็วในการช่วยเหลือ..."
+                  rows={12}
+                  className="block w-full p-4 bg-white focus:outline-none font-mono text-sm leading-relaxed text-slate-800 placeholder:text-slate-400 resize-y"
+                />
+              </div>
             </div>
 
             {/* Tags Area */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
+              <label className="block text-sm font-semibold text-slate-800 mb-2">
                 แท็กป้ายกำกับ (Tags)
               </label>
 
               {/* Selected Tags list */}
-              <div className="flex flex-wrap gap-2 mb-3">
-                {tags.map(tag => (
-                  <span key={tag} className="flex items-center gap-1 px-3 py-1 bg-blue-50 text-blue-700 text-sm font-medium rounded-full border border-blue-200">
-                    #{tag}
-                    <button type="button" onClick={() => handleRemoveTag(tag)} className="hover:bg-blue-100 rounded-full p-0.5">
-                      <X size={14} />
-                    </button>
-                  </span>
-                ))}
-              </div>
+              {tags.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {tags.map(tag => (
+                    <span key={tag} className="flex items-center gap-1 pl-3 pr-1.5 py-1 bg-brand-50 text-brand-700 text-sm font-medium rounded-full border border-brand-200 animate-fade-up">
+                      #{tag}
+                      <button type="button" onClick={() => handleRemoveTag(tag)} className="hover:bg-brand-100 rounded-full p-0.5 cursor-pointer" title="ลบแท็ก">
+                        <X size={14} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
 
               {/* Add Custom Tag */}
               <div className="flex gap-2 max-w-sm mb-4">
@@ -247,28 +245,29 @@ export default function CreateQuestion({ currentUser }) {
                   onChange={(e) => setNewTag(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddTag(newTag))}
                   placeholder="พิมพ์แท็กใหม่แล้วกด Enter..."
-                  className="flex-1 px-3 py-1.5 border rounded-lg text-sm focus:outline-none focus:border-blue-500"
+                  className="input-field py-2"
                 />
                 <button
                   type="button"
                   onClick={() => handleAddTag(newTag)}
-                  className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 border rounded-lg text-sm flex items-center gap-1 text-gray-700"
+                  className="btn-ghost shrink-0"
                 >
                   <Plus size={16} /> เพิ่ม
                 </button>
               </div>
 
               {/* AI Tag Suggestion box */}
-              <div className="bg-gray-50 border rounded-xl p-4">
-                <div className="flex items-center gap-2 text-xs font-semibold text-gray-500 mb-2">
-                  <span>AI แนะนำ:</span>
+              <div className="rounded-xl p-4 border border-violet-100 bg-gradient-to-br from-violet-50/80 to-brand-50/60">
+                <div className="flex items-center gap-2 text-xs font-semibold text-violet-700 mb-2.5">
+                  <Sparkles size={14} />
+                  <span>AI แนะนำ</span>
                   {isSuggesting && (
-                    <span className="flex items-center gap-1 text-blue-600">
+                    <span className="flex items-center gap-1 text-brand-600 font-medium">
                       <Loader2 size={12} className="animate-spin" /> กำลังประมวลผลหมวดหมู่...
                     </span>
                   )}
                 </div>
-                
+
                 {suggestedTags.length > 0 ? (
                   <div className="flex flex-wrap gap-2">
                     {suggestedTags.map(tag => (
@@ -276,14 +275,14 @@ export default function CreateQuestion({ currentUser }) {
                         type="button"
                         key={tag}
                         onClick={() => handleAddTag(tag)}
-                        className="px-3 py-1 bg-white hover:bg-green-50 hover:text-green-700 hover:border-green-300 border rounded-lg text-xs font-medium text-gray-600 transition flex items-center gap-1"
+                        className="px-3 py-1 bg-white hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300 border border-slate-200 rounded-lg text-xs font-medium text-slate-600 transition flex items-center gap-1 cursor-pointer shadow-sm"
                       >
-                        +{tag}
+                        <Plus size={12} /> {tag}
                       </button>
                     ))}
                   </div>
                 ) : (
-                  <span className="text-xs text-gray-400">
+                  <span className="text-xs text-slate-500">
                     {!title && !body ? 'พิมพ์หัวข้อหรือรายละเอียดคำถามเพื่อให้ AI แนะนำแท็กที่เหมาะสม' : 'ยังไม่มีแท็กแนะนำเพิ่มเติม'}
                   </span>
                 )}
@@ -291,19 +290,19 @@ export default function CreateQuestion({ currentUser }) {
             </div>
 
             {/* Buttons */}
-            <div className="flex justify-end gap-3 pt-4 border-t">
+            <div className="flex justify-end gap-3 pt-6 border-t border-slate-100">
               <button
                 type="button"
                 onClick={() => navigate('/')}
-                className="px-6 py-2.5 border rounded-xl text-gray-700 font-medium hover:bg-gray-100 transition"
+                className="btn-ghost px-6 py-2.5"
               >
                 ยกเลิก
               </button>
               <button
                 type="submit"
-                className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl shadow-sm transition"
+                className="btn-primary px-6 py-2.5"
               >
-                โพสต์คำถาม
+                <Send size={15} /> โพสต์คำถาม
               </button>
             </div>
           </form>

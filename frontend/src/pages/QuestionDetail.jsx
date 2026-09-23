@@ -1,10 +1,71 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, MessageSquare, ArrowUp, ArrowDown, Star, CheckCircle, User, Sparkles, CircleDashed } from 'lucide-react';
+import { ArrowLeft, MessageSquare, ArrowUp, Star, CheckCircle, Sparkles, CircleDashed, CircleAlert, Loader2, Reply, Send, Pencil, Trash2, Check } from 'lucide-react';
 import axios from 'axios';
+import Avatar from '../components/Avatar';
+import ConfirmDialog from '../components/ConfirmDialog';
+import { tagClass } from '../lib/tags';
+import { invalidateForumCache } from '../lib/forumCache';
 
 // กำหนด URL ของ Backend (ใช้ค่าจาก Environment Variable บน Vercel หรือลิงก์ Render โดยตรง)
 const API_URL = import.meta.env.VITE_API_URL || 'https://mis-project-1.onrender.com';
+
+const OwnerBadge = () => (
+  <span className="text-[10px] px-1.5 py-0.5 rounded-md font-semibold bg-brand-50 text-brand-700 ring-1 ring-inset ring-brand-100">
+    เจ้าของกระทู้
+  </span>
+);
+
+// ปุ่มแก้ไข / ลบ สำหรับเจ้าของเนื้อหา
+const OwnerActions = ({ onEdit, onDelete, label = '' }) => (
+  <div className="flex items-center gap-1">
+    <button
+      type="button"
+      onClick={onEdit}
+      className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-brand-700 hover:bg-brand-50 px-2 py-1 rounded-lg transition cursor-pointer"
+      title={`แก้ไข${label}`}
+    >
+      <Pencil size={12} /> แก้ไข
+    </button>
+    <button
+      type="button"
+      onClick={onDelete}
+      className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-red-600 hover:bg-red-50 px-2 py-1 rounded-lg transition cursor-pointer"
+      title={`ลบ${label}`}
+    >
+      <Trash2 size={12} /> ลบ
+    </button>
+  </div>
+);
+
+const EditedLabel = ({ at }) =>
+  at ? (
+    <span className="text-[11px] text-slate-400" title={`แก้ไขเมื่อ ${new Date(at).toLocaleString('th-TH')}`}>
+      · แก้ไขแล้ว
+    </span>
+  ) : null;
+
+// กล่องแก้ไขข้อความแบบ inline
+const InlineEditor = ({ value, onChange, onSubmit, onCancel, saving, error, rows = 4 }) => (
+  <form onSubmit={onSubmit} className="space-y-2 animate-fade-up">
+    <textarea
+      autoFocus
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      rows={rows}
+      className="input-field p-3 font-mono leading-relaxed resize-y"
+    />
+    {error && <p className="text-xs text-red-600">{error}</p>}
+    <div className="flex justify-end gap-2">
+      <button type="button" onClick={onCancel} disabled={saving} className="btn-ghost text-xs px-3 py-1.5">
+        ยกเลิก
+      </button>
+      <button type="submit" disabled={saving || !value.trim()} className="btn-primary text-xs px-3 py-1.5">
+        {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} บันทึก
+      </button>
+    </div>
+  </form>
+);
 
 export default function QuestionDetail({ currentUser }) {
   const { id } = useParams();
@@ -12,6 +73,21 @@ export default function QuestionDetail({ currentUser }) {
   const [question, setQuestion] = useState(null);
   const [comments, setComments] = useState([]);
   const [newCommentBody, setNewCommentBody] = useState('');
+  const [replyingTo, setReplyingTo] = useState(null); // _id ของคำตอบที่เจ้าของกระทู้กำลังตอบกลับ
+  const [replyBody, setReplyBody] = useState('');
+  const [replySending, setReplySending] = useState(false);
+  const [replyError, setReplyError] = useState('');
+
+  // แก้ไข / ลบ (เฉพาะเจ้าของเนื้อหา)
+  const [editingQuestion, setEditingQuestion] = useState(false);
+  const [questionDraft, setQuestionDraft] = useState({ title: '', body: '' });
+  const [editingCommentId, setEditingCommentId] = useState(null);
+  const [commentDraft, setCommentDraft] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [editError, setEditError] = useState('');
+  const [pendingDelete, setPendingDelete] = useState(null); // { kind: 'question' | 'comment', id, title, message }
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -81,10 +157,137 @@ export default function QuestionDetail({ currentUser }) {
         author: currentUser
       });
       setNewCommentBody('');
+      invalidateForumCache();
       fetchThread();
     } catch (err) {
       console.error('Failed to submit comment', err);
     }
+  };
+
+  // เจ้าของกระทู้ตอบกลับคำตอบ
+  const handleSubmitReply = async (e, parentId) => {
+    e.preventDefault();
+    if (!replyBody.trim() || replySending) return;
+
+    setReplySending(true);
+    setReplyError('');
+    try {
+      await axios.post(`${API_URL}/api/questions/${id}/comments`, {
+        body: replyBody,
+        author: currentUser,
+        parentId
+      });
+      setReplyBody('');
+      setReplyingTo(null);
+      invalidateForumCache();
+      fetchThread();
+    } catch (err) {
+      console.error('Failed to submit reply', err);
+      setReplyError(err.response?.data?.error || 'ส่งข้อความตอบกลับไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+    } finally {
+      setReplySending(false);
+    }
+  };
+
+  const errorMessage = (err, fallback) => {
+    if (err.response?.data?.error) return err.response.data.error;
+    // 404 ที่ไม่มีข้อความ error = เซิร์ฟเวอร์ไม่มี route นี้ (backend ยังไม่ได้ deploy เวอร์ชันล่าสุด)
+    if (err.response?.status === 404) return 'เซิร์ฟเวอร์ยังไม่รองรับการทำรายการนี้ (backend อาจยังไม่ได้อัปเดตเป็นเวอร์ชันล่าสุด)';
+    if (!err.response) return 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่อีกครั้ง';
+    return fallback;
+  };
+
+  const startEditQuestion = () => {
+    setQuestionDraft({ title: question.title, body: question.body });
+    setEditingQuestion(true);
+    setEditingCommentId(null);
+    setEditError('');
+  };
+
+  const handleSaveQuestion = async (e) => {
+    e.preventDefault();
+    if (!questionDraft.title.trim() || !questionDraft.body.trim()) {
+      setEditError('กรุณากรอกหัวข้อและรายละเอียดคำถาม');
+      return;
+    }
+    setSaving(true);
+    setEditError('');
+    try {
+      const { data } = await axios.put(`${API_URL}/api/questions/${id}`, {
+        title: questionDraft.title,
+        body: questionDraft.body,
+        userName: currentUser.name
+      });
+      setQuestion(data);
+      setEditingQuestion(false);
+      invalidateForumCache();
+    } catch (err) {
+      setEditError(errorMessage(err, 'บันทึกการแก้ไขไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const startEditComment = (comment) => {
+    setEditingCommentId(comment._id);
+    setCommentDraft(comment.body);
+    setEditingQuestion(false);
+    setReplyingTo(null);
+    setEditError('');
+  };
+
+  const handleSaveComment = async (e) => {
+    e.preventDefault();
+    if (!commentDraft.trim()) {
+      setEditError('กรุณากรอกข้อความ');
+      return;
+    }
+    setSaving(true);
+    setEditError('');
+    try {
+      const { data } = await axios.put(`${API_URL}/api/comments/${editingCommentId}`, {
+        body: commentDraft,
+        userName: currentUser.name
+      });
+      setComments(prev => prev.map(c => (c._id === data._id ? data : c)));
+      setEditingCommentId(null);
+    } catch (err) {
+      setEditError(errorMessage(err, 'บันทึกการแก้ไขไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const requestDelete = (target) => {
+    setDeleteError('');
+    setPendingDelete(target);
+  };
+
+  const handleConfirmDelete = async () => {
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      if (pendingDelete.kind === 'question') {
+        await axios.delete(`${API_URL}/api/questions/${id}`, { data: { userName: currentUser.name } });
+        invalidateForumCache();
+        navigate('/');
+        return;
+      }
+      await axios.delete(`${API_URL}/api/comments/${pendingDelete.id}`, { data: { userName: currentUser.name } });
+      invalidateForumCache();
+      setPendingDelete(null);
+      fetchThread();
+    } catch (err) {
+      setDeleteError(errorMessage(err, 'ลบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const openReply = (commentId) => {
+    setReplyingTo(replyingTo === commentId ? null : commentId);
+    setReplyBody('');
+    setReplyError('');
   };
 
   // Custom code highlighter logic
@@ -112,7 +315,7 @@ export default function QuestionDetail({ currentUser }) {
     return parts.map((part, i) => {
       if (i % 2 === 1) {
         return (
-          <code key={i} className="bg-gray-800 text-pink-400 px-1.5 py-0.5 rounded font-mono text-xs border border-gray-700">
+          <code key={i} className="bg-slate-100 text-pink-600 px-1.5 py-0.5 rounded-md font-mono text-[0.85em] border border-slate-200">
             {part}
           </code>
         );
@@ -134,9 +337,9 @@ export default function QuestionDetail({ currentUser }) {
         
         return (
           <div key={index} className="relative group my-4">
-            <div className="absolute right-3 top-2 text-xs font-mono text-gray-500 uppercase">{lang}</div>
+            <div className="absolute right-3 top-2 text-[10px] font-mono font-semibold tracking-wider text-slate-400 uppercase">{lang}</div>
             <pre 
-              className="bg-gray-900 text-gray-100 p-4 rounded-xl font-mono text-xs md:text-sm overflow-x-auto border border-gray-800 leading-relaxed shadow-inner"
+              className="bg-slate-900 text-slate-100 p-4 pt-8 rounded-xl font-mono text-xs md:text-sm overflow-x-auto border border-slate-800 leading-relaxed shadow-lg shadow-slate-900/10"
               dangerouslySetInnerHTML={{ __html: highlighted }}
             />
           </div>
@@ -144,7 +347,7 @@ export default function QuestionDetail({ currentUser }) {
       }
       
       return (
-        <span key={index} className="whitespace-pre-line text-gray-800 leading-relaxed text-base block my-2">
+        <span key={index} className="whitespace-pre-line text-slate-700 leading-relaxed text-[15px] block my-2">
           {renderInlineCode(part)}
         </span>
       );
@@ -153,10 +356,10 @@ export default function QuestionDetail({ currentUser }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center">
         <div className="text-center space-y-3">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="text-gray-500 font-medium">กำลังโหลดข้อมูลกระทู้...</p>
+          <Loader2 size={36} className="animate-spin text-brand-600 mx-auto" />
+          <p className="text-slate-500 font-medium text-sm">กำลังโหลดข้อมูลกระทู้...</p>
         </div>
       </div>
     );
@@ -164,13 +367,17 @@ export default function QuestionDetail({ currentUser }) {
 
   if (error || !question) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="bg-white p-8 rounded-2xl border text-center max-w-md shadow-sm">
-          <h2 className="text-xl font-bold text-red-600 mb-2">เกิดข้อผิดพลาด</h2>
-          <p className="text-gray-600 mb-6">{error || 'ไม่พบหน้ากระทู้นี้'}</p>
-          <button 
-            onClick={() => navigate('/')} 
-            className="px-5 py-2.5 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 transition"
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="card p-8 text-center max-w-md animate-slide-in">
+          <div className="w-14 h-14 mx-auto rounded-2xl bg-red-50 text-red-600 flex items-center justify-center mb-4">
+            <CircleAlert size={26} />
+          </div>
+          <h2 className="text-xl font-bold text-slate-900 mb-2">เกิดข้อผิดพลาด</h2>
+          <p className="text-slate-500 text-sm mb-6">{error || 'ไม่พบหน้ากระทู้นี้'}</p>
+          <button
+            type="button"
+            onClick={() => navigate('/')}
+            className="btn-primary px-5 py-2.5"
           >
             กลับสู่หน้าแรก
           </button>
@@ -181,184 +388,277 @@ export default function QuestionDetail({ currentUser }) {
 
   const hasUpvotedQuestion = question.upvoteUserIds?.includes(currentUser.name);
   const canVerify = currentUser.role === 'Teacher' || question.author.name === currentUser.name;
+  const isQuestionAuthor = question.author.name === currentUser.name;
+  const isMine = (name) => name === currentUser.name;
+  const isOwnerName = (name) => name === question.author.name;
+  const answers = comments.filter(c => !c.parentId);
+  const repliesByParent = comments
+    .filter(c => c.parentId)
+    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+    .reduce((acc, r) => ((acc[r.parentId] ||= []).push(r), acc), {});
+  const roleLabel = (role) => (role === 'Teacher' ? 'อาจารย์' : 'นักศึกษา');
+  const roleBadgeClass = (role) =>
+    `text-[10px] px-1.5 py-0.5 rounded-md font-semibold ${
+      role === 'Teacher' ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-600'
+    }`;
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="min-h-screen flex flex-col">
       {/* Header */}
-      <header className="bg-white border-b sticky top-0 z-10">
-        <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
-          <button 
+      <header className="glass sticky top-0 z-30 border-b border-slate-200/70">
+        <div className="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between gap-3">
+          <button
+            type="button"
             onClick={() => navigate('/')}
-            className="flex items-center gap-2 text-gray-600 hover:text-blue-600 font-medium transition"
+            className="flex items-center gap-2 pl-2 pr-3 py-2 rounded-xl text-sm text-slate-600 hover:text-brand-700 hover:bg-slate-100 font-semibold transition cursor-pointer"
           >
-            <ArrowLeft size={20} /> กลับหน้าแรก
+            <ArrowLeft size={18} /> กลับหน้าแรก
           </button>
-          <div className="flex items-center gap-2 text-sm text-gray-500">
-            <span>บทบาทปัจจุบันของคุณ:</span>
-            <span className={`px-2.5 py-0.5 rounded-full font-bold text-xs ${
-              currentUser.role === 'Teacher' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+          <div className="flex items-center gap-2 text-xs text-slate-500 min-w-0">
+            <span className="hidden sm:inline">บทบาทปัจจุบันของคุณ:</span>
+            <span className={`inline-flex items-center gap-1.5 pl-1 pr-2.5 py-1 rounded-full font-semibold truncate ${
+              currentUser.role === 'Teacher' ? 'bg-violet-50 text-violet-700 border border-violet-200' : 'bg-brand-50 text-brand-700 border border-brand-100'
             }`}>
-              {currentUser.role === 'Teacher' ? 'อาจารย์' : 'นักศึกษา'} ({currentUser.name})
+              <Avatar name={currentUser.name} size="xs" />
+              {roleLabel(currentUser.role)} ({currentUser.name})
             </span>
           </div>
         </div>
       </header>
 
       {/* Main Container */}
-      <main className="flex-1 max-w-4xl mx-auto w-full px-4 py-8 space-y-6">
-        
+      <main className="flex-1 max-w-4xl mx-auto w-full px-4 py-8 space-y-8">
+
         {/* Question Panel */}
-        <div className="bg-white rounded-2xl border shadow-sm p-6 md:p-8 flex gap-6">
+        <article className="card p-5 sm:p-8 flex gap-4 sm:gap-6 animate-fade-up">
           {/* Left Column: Vote */}
-          <div className="flex flex-col items-center gap-2">
-            <button 
+          <div className="flex flex-col items-center gap-1.5 shrink-0">
+            <button
+              type="button"
               onClick={handleVoteQuestion}
-              className={`p-2.5 rounded-full border transition hover:bg-blue-50 ${
-                hasUpvotedQuestion ? 'bg-blue-100 border-blue-300 text-blue-600' : 'bg-gray-50 text-gray-500 border-gray-200'
+              className={`w-11 h-11 rounded-xl border flex items-center justify-center transition cursor-pointer ${
+                hasUpvotedQuestion
+                  ? 'bg-brand-50 border-brand-200 text-brand-600'
+                  : 'bg-slate-50 text-slate-500 border-slate-200 hover:border-brand-200 hover:text-brand-600'
               }`}
               title="โหวตขึ้น"
             >
-              <ArrowUp size={22} className={hasUpvotedQuestion ? 'fill-blue-600' : ''} />
+              <ArrowUp size={20} />
             </button>
-            <span className="text-lg font-bold text-gray-800">{question.upvotes}</span>
+            <span className="text-lg font-bold text-slate-800">{question.upvotes}</span>
           </div>
 
           {/* Right Column: Question Content */}
-          <div className="flex-1 space-y-4">
-            <div className="flex flex-wrap items-center gap-3 text-sm text-gray-500">
-              <div className="w-9 h-9 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center font-bold">
-                {question.author.name.charAt(0)}
-              </div>
+          <div className="flex-1 min-w-0 space-y-4">
+            <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500">
+              <Avatar name={question.author.name} size="md" />
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="font-semibold text-gray-900">{question.author.name}</span>
-                  <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">
-                    {question.author.role === 'Teacher' ? 'อาจารย์' : 'นักศึกษา'}
-                  </span>
+                  <span className="font-semibold text-slate-900">{question.author.name}</span>
+                  <span className={roleBadgeClass(question.author.role)}>{roleLabel(question.author.role)}</span>
                 </div>
-                <span className="text-xs">{new Date(question.createdAt).toLocaleString('th-TH')}</span>
+                <span className="text-xs">{new Date(question.createdAt).toLocaleString('th-TH')}</span>{' '}
+                <EditedLabel at={question.editedAt} />
               </div>
 
               {/* Status Badge */}
-              <div className="ml-auto flex items-center gap-1.5 font-semibold text-sm">
+              <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+                {isQuestionAuthor && !editingQuestion && (
+                  <OwnerActions
+                    label="กระทู้"
+                    onEdit={startEditQuestion}
+                    onDelete={() => requestDelete({
+                      kind: 'question',
+                      id: question._id,
+                      title: 'ลบกระทู้นี้?',
+                      message: `กระทู้ "${question.title}" รวมถึงคำตอบและข้อความตอบกลับทั้งหมด (${comments.length} รายการ) จะถูกลบถาวร และไม่สามารถกู้คืนได้`
+                    })}
+                  />
+                )}
                 {question.status === 'resolved' ? (
-                  <span className="flex items-center gap-1 text-green-600 bg-green-50 px-3 py-1 rounded-full border border-green-200">
-                    <CheckCircle size={16} /> แก้ปัญหาแล้ว
+                  <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
+                    <CheckCircle size={14} /> แก้ปัญหาแล้ว
                   </span>
                 ) : (
-                  <span className="flex items-center gap-1 text-yellow-600 bg-yellow-50 px-3 py-1 rounded-full border border-yellow-200">
-                    <CircleDashed size={16} /> กำลังรอคำตอบ
+                  <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-700 bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
+                    <CircleDashed size={14} /> กำลังรอคำตอบ
                   </span>
                 )}
               </div>
             </div>
 
-            <h1 className="text-2xl font-bold text-gray-900 leading-snug">
-              {question.title}
-            </h1>
+            {editingQuestion ? (
+              <form onSubmit={handleSaveQuestion} className="space-y-3 animate-fade-up">
+                <input
+                  type="text"
+                  autoFocus
+                  value={questionDraft.title}
+                  onChange={(e) => setQuestionDraft(d => ({ ...d, title: e.target.value }))}
+                  placeholder="หัวข้อคำถาม"
+                  className="input-field text-base font-bold py-3"
+                />
+                <textarea
+                  value={questionDraft.body}
+                  onChange={(e) => setQuestionDraft(d => ({ ...d, body: e.target.value }))}
+                  placeholder="รายละเอียดปัญหาหรือโค้ด"
+                  rows={10}
+                  className="input-field p-4 font-mono leading-relaxed resize-y"
+                />
+                {editError && <p className="text-xs text-red-600">{editError}</p>}
+                <div className="flex justify-end gap-2">
+                  <button type="button" onClick={() => setEditingQuestion(false)} disabled={saving} className="btn-ghost text-xs">
+                    ยกเลิก
+                  </button>
+                  <button type="submit" disabled={saving} className="btn-primary text-xs">
+                    {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} บันทึกการแก้ไข
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <>
+                <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 leading-snug tracking-tight">
+                  {question.title}
+                </h1>
 
-            {/* Render body */}
-            <div className="prose max-w-none text-gray-800">
-              {renderContentWithCode(question.body)}
-            </div>
+                {/* Render body */}
+                <div className="max-w-none text-slate-700">
+                  {renderContentWithCode(question.body)}
+                </div>
+              </>
+            )}
 
             {/* AI Tags */}
-            <div className="flex flex-wrap gap-2 pt-2">
-              {question.tags.map(tag => {
-                let colorClass = 'bg-gray-100 text-gray-700';
-                if (tag === 'Database') colorClass = 'bg-green-100 text-green-700 border border-green-200';
-                else if (tag === 'Error') colorClass = 'bg-red-100 text-red-700 border border-red-200';
-                else if (tag === 'React') colorClass = 'bg-blue-100 text-blue-700 border border-blue-200';
-                else if (tag === 'Java') colorClass = 'bg-orange-100 text-orange-700 border border-orange-200';
-                else if (tag === 'NestJS') colorClass = 'bg-pink-100 text-pink-700 border border-pink-200';
-                return (
-                  <span key={tag} className={`px-2.5 py-1 text-xs font-semibold rounded-md ${colorClass}`}>
-                    #{tag}
-                  </span>
-                );
-              })}
-            </div>
+            {question.tags.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 pt-2">
+                {question.tags.map(tag => (
+                  <span key={tag} className={tagClass(tag)}>#{tag}</span>
+                ))}
+              </div>
+            )}
           </div>
-        </div>
+        </article>
 
         {/* Comments Section */}
-        <div className="space-y-4">
-          <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-            <MessageSquare size={20} className="text-gray-500" />
-            คำตอบทั้งหมด ({comments.length})
+        <section className="space-y-4">
+          <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <MessageSquare size={19} className="text-brand-600" />
+            คำตอบทั้งหมด
+            <span className="text-xs font-semibold text-slate-500 bg-slate-100 rounded-full px-2 py-0.5">{answers.length}</span>
           </h2>
 
           {/* Render comments list */}
-          {comments.map(comment => {
+          {answers.map(comment => {
             const hasUpvotedComment = comment.upvoteUserIds?.includes(currentUser.name);
+            const replies = repliesByParent[comment._id] || [];
 
             return (
-              <div 
-                key={comment._id} 
-                className={`bg-white rounded-2xl border p-6 flex gap-4 transition-all duration-300 ${
-                  comment.isVerified 
-                    ? 'border-green-500 bg-green-50/30 ring-2 ring-green-400/20' 
-                    : 'border-gray-200'
+              <div
+                key={comment._id}
+                className={`rounded-2xl border p-5 sm:p-6 flex gap-4 transition-all duration-300 animate-fade-up ${
+                  comment.isVerified
+                    ? 'bg-emerald-50/40 border-emerald-300 ring-4 ring-emerald-500/10 shadow-soft'
+                    : 'bg-white border-slate-200/80 shadow-soft'
                 }`}
               >
                 {/* Comment Vote */}
-                <div className="flex flex-col items-center gap-1.5 pt-1">
-                  <button 
+                <div className="flex flex-col items-center gap-1 shrink-0">
+                  <button
+                    type="button"
                     onClick={() => handleVoteComment(comment._id)}
-                    className={`p-2 rounded-full border transition hover:bg-blue-50 ${
-                      hasUpvotedComment ? 'bg-blue-100 border-blue-200 text-blue-600' : 'bg-gray-50 border-gray-200 text-gray-400'
+                    className={`w-9 h-9 rounded-xl border flex items-center justify-center transition cursor-pointer ${
+                      hasUpvotedComment
+                        ? 'bg-brand-50 border-brand-200 text-brand-600'
+                        : 'bg-slate-50 border-slate-200 text-slate-400 hover:border-brand-200 hover:text-brand-600'
                     }`}
                     title="โหวตความคิดเห็น"
                   >
-                    <ArrowUp size={16} className={hasUpvotedComment ? 'fill-blue-600' : ''} />
+                    <ArrowUp size={16} />
                   </button>
-                  <span className="text-sm font-bold text-gray-700">{comment.upvotes}</span>
+                  <span className="text-sm font-bold text-slate-700">{comment.upvotes}</span>
                 </div>
 
                 {/* Comment Content */}
-                <div className="flex-1 space-y-3">
-                  
+                <div className="flex-1 min-w-0 space-y-3">
+
                   {/* Verified Header if verified */}
                   {comment.isVerified && (
-                    <div className="flex items-center gap-1.5 text-green-700 font-bold text-sm bg-green-100/60 px-3 py-1.5 rounded-lg border border-green-200 w-fit">
-                      <Star size={16} className="fill-green-600 text-green-600 animate-pulse" />
+                    <div className="flex items-center gap-1.5 text-emerald-700 font-semibold text-xs bg-emerald-100/70 px-3 py-1.5 rounded-lg border border-emerald-200 w-fit">
+                      <Star size={14} className="fill-emerald-600 text-emerald-600" />
                       คำตอบนี้ถูกต้องและได้รับการยืนยันจากอาจารย์หรือเจ้าของกระทู้แล้ว
                     </div>
                   )}
 
                   {/* Author Header */}
-                  <div className="flex items-center gap-2 text-sm text-gray-500">
-                    <div className="w-7 h-7 bg-gray-200 rounded-full flex items-center justify-center text-gray-600 font-semibold text-xs">
-                      {comment.author.name.charAt(0)}
-                    </div>
+                  <div className="flex items-center gap-2.5 text-sm text-slate-500">
+                    <Avatar name={comment.author.name} size="sm" />
                     <div>
                       <div className="flex items-center gap-1.5">
-                        <span className="font-semibold text-gray-900">{comment.author.name}</span>
-                        <span className={`text-[10px] px-1.5 py-0.2 rounded font-medium ${
-                          comment.author.role === 'Teacher' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'
-                        }`}>
-                          {comment.author.role === 'Teacher' ? 'อาจารย์' : 'นักศึกษา'}
-                        </span>
+                        <span className="font-semibold text-slate-900">{comment.author.name}</span>
+                        <span className={roleBadgeClass(comment.author.role)}>{roleLabel(comment.author.role)}</span>
+                        {isOwnerName(comment.author.name) && <OwnerBadge />}
                       </div>
-                      <span className="text-[11px]">{new Date(comment.createdAt).toLocaleString('th-TH')}</span>
+                      <span className="text-[11px]">{new Date(comment.createdAt).toLocaleString('th-TH')}</span>{' '}
+                      <EditedLabel at={comment.editedAt} />
                     </div>
                   </div>
 
                   {/* Comment Body */}
-                  <div className="prose max-w-none text-gray-800">
-                    {renderContentWithCode(comment.body)}
-                  </div>
+                  {editingCommentId === comment._id ? (
+                    <InlineEditor
+                      value={commentDraft}
+                      onChange={setCommentDraft}
+                      onSubmit={handleSaveComment}
+                      onCancel={() => setEditingCommentId(null)}
+                      saving={saving}
+                      error={editError}
+                      rows={5}
+                    />
+                  ) : (
+                    <div className="max-w-none text-slate-700">
+                      {renderContentWithCode(comment.body)}
+                    </div>
+                  )}
 
-                  {/* Actions for teacher or question author */}
-                  {canVerify && (
-                    <div className="flex justify-end pt-1">
+                  {/* Actions: แก้ไข/ลบของตัวเอง, เจ้าของกระทู้ตอบกลับ, อาจารย์หรือเจ้าของกระทู้ยืนยันคำตอบ */}
+                  {(isQuestionAuthor || canVerify || isMine(comment.author.name)) && editingCommentId !== comment._id && (
+                    <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+                      {isMine(comment.author.name) && (
+                        <div className="mr-auto">
+                          <OwnerActions
+                            label="คำตอบ"
+                            onEdit={() => startEditComment(comment)}
+                            onDelete={() => requestDelete({
+                              kind: 'comment',
+                              id: comment._id,
+                              title: 'ลบคำตอบนี้?',
+                              message: replies.length > 0
+                                ? `คำตอบนี้และข้อความตอบกลับ ${replies.length} รายการใต้คำตอบนี้จะถูกลบถาวร`
+                                : 'คำตอบนี้จะถูกลบถาวร และไม่สามารถกู้คืนได้'
+                            })}
+                          />
+                        </div>
+                      )}
+                      {isQuestionAuthor && (
+                        <button
+                          type="button"
+                          onClick={() => openReply(comment._id)}
+                          className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition border cursor-pointer ${
+                            replyingTo === comment._id
+                              ? 'bg-brand-50 text-brand-700 border-brand-200'
+                              : 'bg-white text-slate-600 hover:bg-slate-50 border-slate-200'
+                          }`}
+                        >
+                          <Reply size={14} /> ตอบกลับ
+                        </button>
+                      )}
+                      {canVerify && (
                       <button
                         type="button"
                         onClick={() => handleVerifyComment(comment._id)}
-                        className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition border ${
+                        className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition border cursor-pointer ${
                           comment.isVerified
-                            ? 'bg-red-50 text-red-700 hover:bg-red-100 border-red-200'
-                            : 'bg-green-50 text-green-700 hover:bg-green-100 border-green-200'
+                            ? 'bg-white text-red-600 hover:bg-red-50 border-red-200'
+                            : 'bg-white text-emerald-700 hover:bg-emerald-50 border-emerald-200'
                         }`}
                       >
                         {comment.isVerified ? (
@@ -369,7 +669,82 @@ export default function QuestionDetail({ currentUser }) {
                           </>
                         )}
                       </button>
+                      )}
                     </div>
+                  )}
+
+                  {/* ข้อความตอบกลับจากเจ้าของกระทู้ */}
+                  {replies.length > 0 && (
+                    <div className="space-y-3 border-l-2 border-brand-100 pl-4 ml-1">
+                      {replies.map(reply => (
+                        <div key={reply._id} className="animate-fade-up">
+                          <div className="flex items-center gap-2 text-sm text-slate-500">
+                            <Avatar name={reply.author.name} size="xs" />
+                            <span className="font-semibold text-slate-900 text-[13px]">{reply.author.name}</span>
+                            {isOwnerName(reply.author.name) && <OwnerBadge />}
+                            <span className="text-[11px]">{new Date(reply.createdAt).toLocaleString('th-TH')}</span>
+                            <EditedLabel at={reply.editedAt} />
+                            {isMine(reply.author.name) && editingCommentId !== reply._id && (
+                              <div className="ml-auto">
+                                <OwnerActions
+                                  label="ข้อความตอบกลับ"
+                                  onEdit={() => startEditComment(reply)}
+                                  onDelete={() => requestDelete({
+                                    kind: 'comment',
+                                    id: reply._id,
+                                    title: 'ลบข้อความตอบกลับนี้?',
+                                    message: 'ข้อความตอบกลับนี้จะถูกลบถาวร และไม่สามารถกู้คืนได้'
+                                  })}
+                                />
+                              </div>
+                            )}
+                          </div>
+                          {editingCommentId === reply._id ? (
+                            <div className="mt-2">
+                              <InlineEditor
+                                value={commentDraft}
+                                onChange={setCommentDraft}
+                                onSubmit={handleSaveComment}
+                                onCancel={() => setEditingCommentId(null)}
+                                saving={saving}
+                                error={editError}
+                                rows={3}
+                              />
+                            </div>
+                          ) : (
+                            <div className="mt-1 text-slate-700 [&_span.block]:text-sm [&_span.block]:my-1">
+                              {renderContentWithCode(reply.body)}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* กล่องพิมพ์ตอบกลับ (เฉพาะเจ้าของกระทู้) */}
+                  {isQuestionAuthor && replyingTo === comment._id && (
+                    <form
+                      onSubmit={(e) => handleSubmitReply(e, comment._id)}
+                      className="border-l-2 border-brand-200 pl-4 ml-1 space-y-2 animate-fade-up"
+                    >
+                      <textarea
+                        autoFocus
+                        value={replyBody}
+                        onChange={(e) => setReplyBody(e.target.value)}
+                        placeholder={`ตอบกลับ ${comment.author.name}...`}
+                        rows={3}
+                        className="input-field p-3 leading-relaxed resize-y"
+                      />
+                      {replyError && <p className="text-xs text-red-600">{replyError}</p>}
+                      <div className="flex justify-end gap-2">
+                        <button type="button" onClick={() => openReply(comment._id)} className="btn-ghost text-xs px-3 py-1.5">
+                          ยกเลิก
+                        </button>
+                        <button type="submit" disabled={!replyBody.trim() || replySending} className="btn-primary text-xs px-3 py-1.5">
+                          {replySending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} ส่งตอบกลับ
+                        </button>
+                      </div>
+                    </form>
                   )}
 
                 </div>
@@ -377,40 +752,55 @@ export default function QuestionDetail({ currentUser }) {
             );
           })}
 
-          {comments.length === 0 && (
-            <div className="text-center py-10 bg-white border rounded-2xl text-gray-400 text-sm">
-              ยังไม่มีผู้มาแสดงความคิดเห็น ร่วมเป็นคนแรกที่จะช่วยตอบคำถามนี้กัน!
+          {answers.length === 0 && (
+            <div className="text-center py-12 px-6 bg-white/60 border border-dashed border-slate-300 rounded-2xl">
+              <div className="w-12 h-12 mx-auto rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center mb-3">
+                <MessageSquare size={22} />
+              </div>
+              <p className="text-slate-500 text-sm">ยังไม่มีผู้มาแสดงความคิดเห็น ร่วมเป็นคนแรกที่จะช่วยตอบคำถามนี้กัน!</p>
             </div>
           )}
-        </div>
+        </section>
 
         {/* Reply Box */}
-        <div className="bg-white rounded-2xl border shadow-sm p-6">
-          <h3 className="font-bold text-gray-900 mb-4 text-base">เขียนคำตอบของคุณ</h3>
+        <section className="card p-5 sm:p-6">
+          <h3 className="font-bold text-slate-900 mb-4 text-base">เขียนคำตอบของคุณ</h3>
           <form onSubmit={handleSubmitComment} className="space-y-4">
             <textarea
               value={newCommentBody}
               onChange={(e) => setNewCommentBody(e.target.value)}
               placeholder="พิมพ์คำตอบของคุณเพื่อช่วยเหลือเพื่อนๆ (หากต้องการแปะโค้ด ให้ใช้เครื่องหมาย ``` ครอบโค้ดไว้)..."
               rows={4}
-              className="w-full p-4 border rounded-xl focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm font-mono"
+              className="input-field p-4 font-mono leading-relaxed resize-y"
             />
-            <div className="flex justify-between items-center">
-              <span className="text-xs text-gray-400">
-                คุณกำลังตอบกลับในฐานะ <strong className="text-gray-600">{currentUser.name}</strong>
+            <div className="flex flex-wrap justify-between items-center gap-3">
+              <span className="text-xs text-slate-400 flex items-center gap-2">
+                <Avatar name={currentUser.name} size="xs" />
+                คุณกำลังตอบกลับในฐานะ <strong className="text-slate-600">{currentUser.name}</strong>
               </span>
               <button
                 type="submit"
                 disabled={!newCommentBody.trim()}
-                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium rounded-xl transition text-sm flex items-center gap-1 shadow-sm"
+                className="btn-primary px-5 py-2.5"
               >
-                <Sparkles size="{16}"/> ส่งคำตอบ
+                <Sparkles size={16} /> ส่งคำตอบ
               </button>
             </div>
           </form>
-        </div>
+        </section>
 
       </main>
+
+      {pendingDelete && (
+        <ConfirmDialog
+          title={pendingDelete.title}
+          message={pendingDelete.message}
+          busy={deleting}
+          error={deleteError}
+          onConfirm={handleConfirmDelete}
+          onCancel={() => setPendingDelete(null)}
+        />
+      )}
     </div>
   );
 }

@@ -6,7 +6,7 @@ import QuestionDetail from './pages/QuestionDetail';
 import ChatSupport from './components/ChatSupport';
 
 function App() {
-  const [currentUser, setCurrentUser] = useState({
+  const [currentUser] = useState({
     name: 'Somchai R.',
     role: 'Student',
     avatar: 'Student'
@@ -15,7 +15,7 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Home currentUser={currentUser} setCurrentUser={setCurrentUser} />} />
+        <Route path="/" element={<Home currentUser={currentUser} />} />
         <Route path="/create" element={<CreateQuestion currentUser={currentUser} />} />
         <Route path="/question/:id" element={<QuestionDetail currentUser={currentUser} />} />
       </Routes>
