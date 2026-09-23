@@ -77,10 +77,7 @@ export default function CreateQuestion({ currentUser }) {
 
   // Auto suggest tags when title or body changes (with a debounce)
   useEffect(() => {
-    if (!title && !body) {
-      setSuggestedTags([]);
-      return;
-    }
+    if (!title && !body) return;
 
     const delayDebounceFn = setTimeout(async () => {
       setIsSuggesting(true);
@@ -98,6 +95,9 @@ export default function CreateQuestion({ currentUser }) {
 
     return () => clearTimeout(delayDebounceFn);
   }, [title, body, tags]);
+
+  // ซ่อนคำแนะนำเมื่อยังไม่ได้พิมพ์อะไร (แทนการล้าง state ใน effect)
+  const visibleSuggestions = title || body ? suggestedTags : [];
 
   const hasTag = (tag) => tags.some(t => t.toLowerCase() === tag.toLowerCase());
 
@@ -425,9 +425,9 @@ export default function CreateQuestion({ currentUser }) {
                   )}
                 </div>
 
-                {suggestedTags.length > 0 ? (
+                {visibleSuggestions.length > 0 ? (
                   <div className="flex flex-wrap gap-2">
-                    {suggestedTags.map(tag => (
+                    {visibleSuggestions.map(tag => (
                       <button
                         type="button"
                         key={tag}

@@ -91,23 +91,28 @@ export default function QuestionDetail({ currentUser }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // Fetch thread details
-  const fetchThread = useCallback(async () => {
-    try {
-      const response = await axios.get(`${API_URL}/api/questions/${id}`);
+  // Fetch thread details (setState เฉพาะใน callback หลังได้ผลลัพธ์)
+  const loadThread = useCallback(() =>
+    axios.get(`${API_URL}/api/questions/${id}`).then((response) => {
       setQuestion(response.data.question);
       setComments(response.data.comments);
-    } catch (err) {
-      console.error(err);
-      setError('ไม่พบกระทู้ที่ต้องการ หรือเกิดข้อผิดพลาดในการโหลดข้อมูล');
-    } finally {
-      setLoading(false);
-    }
-  }, [id]);
+    }), [id]);
 
   useEffect(() => {
-    fetchThread();
-  }, [fetchThread]);
+    let cancelled = false;
+    loadThread()
+      .catch((err) => {
+        console.error(err);
+        if (!cancelled) setError('ไม่พบกระทู้ที่ต้องการ หรือเกิดข้อผิดพลาดในการโหลดข้อมูล');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [loadThread]);
+
+  // โหลดข้อมูลใหม่หลังโหวต/ตอบ/แก้ไข
+  const fetchThread = () => loadThread().catch((err) => console.error('Failed to refresh thread', err));
 
   // Vote Question
   const handleVoteQuestion = async () => {
@@ -291,7 +296,7 @@ export default function QuestionDetail({ currentUser }) {
   };
 
   // Custom code highlighter logic
-  const highlightCode = (code, lang) => {
+  const highlightCode = (code) => {
     let escaped = code
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
@@ -326,14 +331,14 @@ export default function QuestionDetail({ currentUser }) {
 
   const renderContentWithCode = (text) => {
     if (!text) return null;
-    const parts = text.split(/(\`\`\`[a-z]*\n[\s\S]*?\`\`\`)/g);
+    const parts = text.split(/(```[a-z]*\n[\s\S]*?```)/g);
     return parts.map((part, index) => {
       if (part.startsWith('```')) {
         const lines = part.split('\n');
         const firstLine = lines[0];
         const lang = firstLine.replace('```', '').trim() || 'code';
         const code = lines.slice(1, lines.length - 1).join('\n');
-        const highlighted = highlightCode(code, lang);
+        const highlighted = highlightCode(code);
         
         return (
           <div key={index} className="relative group my-4">
